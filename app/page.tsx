@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
@@ -22,7 +23,106 @@ const categoryData = [
   { name: "Services", value: 20, color: "#F59E0B" },
 ]
 
+interface DashboardStats {
+  total_sales: number
+  total_orders: number
+  products_sold: number
+  avg_order_value: number
+}
+
+interface RecentSale {
+  id: string
+  customer: string
+  amount: string
+  time: string
+  status: string
+  payment_method: string
+}
+
 export default function Dashboard() {
+  const [stats, setStats] = useState<DashboardStats>({
+    total_sales: 328000,
+    total_orders: 1285,
+    products_sold: 3847,
+    avg_order_value: 255,
+  })
+  const [recentSales, setRecentSales] = useState<RecentSale[]>([
+    {
+      id: "TXN001",
+      customer: "John Doe",
+      amount: "R 245.50",
+      time: "2 minutes ago",
+      status: "Completed",
+      payment_method: "card",
+    },
+    {
+      id: "TXN002",
+      customer: "Jane Smith",
+      amount: "R 189.00",
+      time: "15 minutes ago",
+      status: "Completed",
+      payment_method: "cash",
+    },
+    {
+      id: "TXN003",
+      customer: "Mike Johnson",
+      amount: "R 567.25",
+      time: "1 hour ago",
+      status: "Completed",
+      payment_method: "mobile",
+    },
+    {
+      id: "TXN004",
+      customer: "Sarah Wilson",
+      amount: "R 123.75",
+      time: "2 hours ago",
+      status: "Completed",
+      payment_method: "card",
+    },
+  ])
+
+  // Fetch dashboard data
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        // Fetch stats
+        const statsResponse = await fetch("http://localhost:8000/dashboard/stats")
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json()
+          setStats(statsData)
+        }
+
+        // Fetch recent sales
+        const salesResponse = await fetch("http://localhost:8000/sales/recent?limit=5")
+        if (salesResponse.ok) {
+          const salesData = await salesResponse.json()
+          setRecentSales(salesData)
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error)
+        // Keep using default data if API fails
+      }
+    }
+
+    fetchDashboardData()
+
+    // Refresh data every 30 seconds
+    const interval = setInterval(fetchDashboardData, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const getPaymentIcon = (method: string) => {
+    switch (method) {
+      case "card":
+        return "💳"
+      case "mobile":
+        return "📱"
+      case "cash":
+      default:
+        return "💵"
+    }
+  }
+
   return (
     <div className="flex-1 space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -43,7 +143,7 @@ export default function Dashboard() {
             <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">R 328,000</div>
+            <div className="text-2xl font-bold text-gray-900">R {stats.total_sales.toLocaleString()}</div>
             <p className="text-xs text-green-600">+12.5% from last month</p>
           </CardContent>
         </Card>
@@ -54,7 +154,7 @@ export default function Dashboard() {
             <ShoppingCart className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">1,285</div>
+            <div className="text-2xl font-bold text-gray-900">{stats.total_orders.toLocaleString()}</div>
             <p className="text-xs text-blue-600">+8.2% from last month</p>
           </CardContent>
         </Card>
@@ -65,7 +165,7 @@ export default function Dashboard() {
             <Package className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">3,847</div>
+            <div className="text-2xl font-bold text-gray-900">{stats.products_sold.toLocaleString()}</div>
             <p className="text-xs text-purple-600">+15.3% from last month</p>
           </CardContent>
         </Card>
@@ -76,7 +176,7 @@ export default function Dashboard() {
             <TrendingUp className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">R 255</div>
+            <div className="text-2xl font-bold text-gray-900">R {stats.avg_order_value.toFixed(0)}</div>
             <p className="text-xs text-orange-600">+3.8% from last month</p>
           </CardContent>
         </Card>
@@ -160,15 +260,10 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {[
-              { id: "TXN001", customer: "John Doe", amount: "R 245.50", time: "2 minutes ago", status: "Completed" },
-              { id: "TXN002", customer: "Jane Smith", amount: "R 189.00", time: "15 minutes ago", status: "Completed" },
-              { id: "TXN003", customer: "Mike Johnson", amount: "R 567.25", time: "1 hour ago", status: "Completed" },
-              { id: "TXN004", customer: "Sarah Wilson", amount: "R 123.75", time: "2 hours ago", status: "Completed" },
-            ].map((transaction) => (
+            {recentSales.map((transaction) => (
               <div
                 key={transaction.id}
-                className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-4">
                   <Receipt className="h-8 w-8 text-green-600" />
@@ -179,7 +274,10 @@ export default function Dashboard() {
                 </div>
                 <div className="text-right">
                   <p className="font-medium text-gray-900">{transaction.amount}</p>
-                  <p className="text-sm text-gray-500">{transaction.time}</p>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span>{getPaymentIcon(transaction.payment_method)}</span>
+                    <span>{transaction.time}</span>
+                  </div>
                 </div>
               </div>
             ))}

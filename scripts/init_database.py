@@ -34,7 +34,8 @@ def init_database():
             discount_amount REAL DEFAULT 0,
             vat_amount REAL NOT NULL,
             sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            customer_name TEXT
+            customer_name TEXT,
+            payment_method TEXT DEFAULT 'cash'
         )
     ''')
     

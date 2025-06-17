@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
 import uvicorn
+from sqlalchemy import func
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./pos_system.db"
@@ -45,6 +46,7 @@ class Sale(Base):
     vat_amount = Column(Float)
     sale_date = Column(DateTime, default=datetime.utcnow)
     customer_name = Column(String, nullable=True)
+    payment_method = Column(String, default="cash")  # Add this line
     
     items = relationship("SaleItem", back_populates="sale")
 
@@ -121,6 +123,15 @@ class SaleResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# Add this new model for payment methods
+class SaleCreateExtended(BaseModel):
+    items: List[SaleItemCreate]
+    discount_amount: float = 0
+    customer_name: Optional[str] = None
+    payment_method: str
+    total_amount: float
+    vat_amount: float
+
 # FastAPI app
 app = FastAPI(title="POS System API", version="1.0.0")
 
@@ -182,21 +193,16 @@ def read_products(db: Session = Depends(get_db)):
     return db.query(Product).all()
 
 # Sales
+# Update the sales endpoint
 @app.post("/sales/", response_model=SaleResponse)
-def create_sale(sale: SaleCreate, db: Session = Depends(get_db)):
-    # Calculate totals
-    subtotal = sum(item.quantity * item.unit_price for item in sale.items)
-    after_discount = subtotal - sale.discount_amount
-    vat_rate = 0.15  # 15% VAT
-    vat_amount = after_discount * vat_rate
-    total_amount = after_discount + vat_amount
-    
-    # Create sale
+def create_sale(sale: SaleCreateExtended, db: Session = Depends(get_db)):
+    # Create sale with the provided totals (already calculated on frontend)
     db_sale = Sale(
-        total_amount=total_amount,
+        total_amount=sale.total_amount,
         discount_amount=sale.discount_amount,
-        vat_amount=vat_amount,
-        customer_name=sale.customer_name
+        vat_amount=sale.vat_amount,
+        customer_name=sale.customer_name,
+        payment_method=sale.payment_method
     )
     db.add(db_sale)
     db.commit()
@@ -262,6 +268,43 @@ def update_setting(key: str, value: str, db: Session = Depends(get_db)):
         db.add(setting)
     db.commit()
     return {"message": "Setting updated"}
+
+# Add new endpoint for real-time dashboard data
+@app.get("/dashboard/stats")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    # Calculate real stats from database
+    total_sales = db.query(func.sum(Sale.total_amount)).scalar() or 0
+    total_orders = db.query(func.count(Sale.id)).scalar() or 0
+    
+    # Get recent sales for average calculation
+    recent_sales = db.query(Sale).order_by(Sale.sale_date.desc()).limit(100).all()
+    avg_order_value = sum(sale.total_amount for sale in recent_sales) / len(recent_sales) if recent_sales else 0
+    
+    # Calculate products sold
+    products_sold = db.query(func.sum(SaleItem.quantity)).scalar() or 0
+    
+    return {
+        "total_sales": total_sales,
+        "total_orders": total_orders,
+        "products_sold": products_sold,
+        "avg_order_value": avg_order_value
+    }
+
+# Add endpoint for recent sales
+@app.get("/sales/recent")
+def get_recent_sales(limit: int = 10, db: Session = Depends(get_db)):
+    sales = db.query(Sale).order_by(Sale.sale_date.desc()).limit(limit).all()
+    return [
+        {
+            "id": f"TXN{str(sale.id).zfill(3)}",
+            "customer": sale.customer_name or "Walk-in Customer",
+            "amount": f"R {sale.total_amount:.2f}",
+            "time": sale.sale_date.strftime("%Y-%m-%d %H:%M"),
+            "status": "Completed",
+            "payment_method": getattr(sale, 'payment_method', 'cash')
+        }
+        for sale in sales
+    ]
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
