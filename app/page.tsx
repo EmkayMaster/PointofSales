@@ -85,30 +85,46 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        // Check if backend is available first
+        const healthCheck = await fetch("http://localhost:8000/", {
+          method: "GET",
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        })
+
+        if (!healthCheck.ok) {
+          throw new Error("Backend not available")
+        }
+
         // Fetch stats
-        const statsResponse = await fetch("http://localhost:8000/dashboard/stats")
+        const statsResponse = await fetch("http://localhost:8000/dashboard/stats", {
+          signal: AbortSignal.timeout(5000),
+        })
         if (statsResponse.ok) {
           const statsData = await statsResponse.json()
           setStats(statsData)
         }
 
         // Fetch recent sales
-        const salesResponse = await fetch("http://localhost:8000/sales/recent?limit=5")
+        const salesResponse = await fetch("http://localhost:8000/sales/recent?limit=5", {
+          signal: AbortSignal.timeout(5000),
+        })
         if (salesResponse.ok) {
           const salesData = await salesResponse.json()
           setRecentSales(salesData)
         }
       } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-        // Keep using default data if API fails
+        console.log("Backend not available, using demo data:", error.message)
+        // Keep using default demo data when backend is not available
+        // This allows the frontend to work independently
       }
     }
 
     fetchDashboardData()
 
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchDashboardData, 30000)
-    return () => clearInterval(interval)
+    // Only set up interval if we want real-time updates
+    // Comment out the interval for demo mode
+    // const interval = setInterval(fetchDashboardData, 30000)
+    // return () => clearInterval(interval)
   }, [])
 
   const getPaymentIcon = (method: string) => {
