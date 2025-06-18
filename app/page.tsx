@@ -85,46 +85,74 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        // Check if backend is available first
+        // Quick health check with very short timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2000) // 2 second timeout
+
         const healthCheck = await fetch("http://localhost:8000/", {
           method: "GET",
-          signal: AbortSignal.timeout(5000), // 5 second timeout
+          signal: controller.signal,
         })
 
-        if (!healthCheck.ok) {
-          throw new Error("Backend not available")
-        }
+        clearTimeout(timeoutId)
 
-        // Fetch stats
-        const statsResponse = await fetch("http://localhost:8000/dashboard/stats", {
-          signal: AbortSignal.timeout(5000),
-        })
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json()
-          setStats(statsData)
-        }
+        if (healthCheck.ok) {
+          // Backend is available, fetch real data
+          const [statsResponse, salesResponse] = await Promise.all([
+            fetch("http://localhost:8000/dashboard/stats", {
+              signal: AbortSignal.timeout(3000),
+            }),
+            fetch("http://localhost:8000/sales/recent?limit=5", {
+              signal: AbortSignal.timeout(3000),
+            }),
+          ])
 
-        // Fetch recent sales
-        const salesResponse = await fetch("http://localhost:8000/sales/recent?limit=5", {
-          signal: AbortSignal.timeout(5000),
-        })
-        if (salesResponse.ok) {
-          const salesData = await salesResponse.json()
-          setRecentSales(salesData)
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json()
+            setStats(statsData)
+          }
+
+          if (salesResponse.ok) {
+            const salesData = await salesResponse.json()
+            setRecentSales(salesData)
+          }
+
+          console.log("✅ Connected to backend - showing live data")
         }
       } catch (error) {
-        console.log("Backend not available, using demo data:", error.message)
-        // Keep using default demo data when backend is not available
-        // This allows the frontend to work independently
+        // Backend not available - use demo data (already set as defaults)
+        console.log("🔄 Backend unavailable - running in demo mode")
+
+        // Optionally load any offline sales data
+        const offlineSales = JSON.parse(localStorage.getItem("pos_offline_sales") || "[]")
+        if (offlineSales.length > 0) {
+          console.log(`📦 Found ${offlineSales.length} offline sales`)
+          // You could display these in the recent sales if needed
+        }
       }
     }
 
     fetchDashboardData()
 
-    // Only set up interval if we want real-time updates
-    // Comment out the interval for demo mode
-    // const interval = setInterval(fetchDashboardData, 30000)
-    // return () => clearInterval(interval)
+    // Set up periodic retry (every 30 seconds) to check if backend comes online
+    const retryInterval = setInterval(() => {
+      fetch("http://localhost:8000/", {
+        method: "GET",
+        signal: AbortSignal.timeout(1000),
+      })
+        .then((response) => {
+          if (response.ok) {
+            console.log("🔄 Backend is back online!")
+            fetchDashboardData()
+            clearInterval(retryInterval) // Stop retrying once connected
+          }
+        })
+        .catch(() => {
+          // Still offline, continue in demo mode
+        })
+    }, 30000)
+
+    return () => clearInterval(retryInterval)
   }, [])
 
   const getPaymentIcon = (method: string) => {
