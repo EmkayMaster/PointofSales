@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,9 +21,21 @@ import {
   Edit,
   Check,
   X,
+  AlertTriangle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { MobileOptimizations } from "./mobile-styles"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 interface CartItem {
   id: string
@@ -32,7 +44,6 @@ interface CartItem {
   quantity: number
   category: string
   type: "product" | "service" | "combo"
-  isEditing?: boolean
 }
 
 interface Product {
@@ -138,7 +149,8 @@ const productsData: Product[] = [
   },
 ]
 
-const categories = ["All", "Electronics", "Clothing", "Food & Beverage", "Professional"]
+const categories = ["Electronics", "Clothing", "Food & Beverage", "Professional"]
+const productTypes = ["product", "service", "combo"]
 const paymentMethods = [
   { id: "cash", name: "Cash", icon: Banknote },
   { id: "card", name: "Credit/Debit Card", icon: CreditCard },
@@ -147,9 +159,15 @@ const paymentMethods = [
 
 export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([])
-  const [selectedCategory, setSelectedCategory] = useState("All")
+
+  // Product form fields
   const [selectedProduct, setSelectedProduct] = useState("")
+  const [productName, setProductName] = useState("")
+  const [productPrice, setProductPrice] = useState("")
+  const [productCategory, setProductCategory] = useState("")
+  const [productType, setProductType] = useState("")
   const [selectedQuantity, setSelectedQuantity] = useState(1)
+
   const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage")
   const [discountValue, setDiscountValue] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState("")
@@ -159,49 +177,106 @@ export default function POSPage() {
   const [editQuantity, setEditQuantity] = useState(1)
   const { toast } = useToast()
 
-  // Filter products based on category
-  const filteredProducts = productsData.filter((product) => {
-    return selectedCategory === "All" || product.category === selectedCategory
-  })
+  // Update form fields when product is selected
+  useEffect(() => {
+    if (selectedProduct) {
+      const product = productsData.find((p) => p.id === selectedProduct)
+      if (product) {
+        setProductName(product.name)
+        setProductPrice(product.price.toString())
+        setProductCategory(product.category)
+        setProductType(product.type)
+      }
+    } else {
+      // Clear fields when no product selected
+      setProductName("")
+      setProductPrice("")
+      setProductCategory("")
+      setProductType("")
+    }
+  }, [selectedProduct])
 
   const addToCart = () => {
-    if (!selectedProduct) {
+    if (!productName.trim()) {
       toast({
-        title: "No product selected",
-        description: "Please select a product to add to cart.",
+        title: "Product name required",
+        description: "Please enter a product name.",
         variant: "destructive",
       })
       return
     }
 
-    const product = productsData.find((p) => p.id === selectedProduct)
-    if (!product) return
+    if (!productPrice || Number(productPrice) <= 0) {
+      toast({
+        title: "Valid price required",
+        description: "Please enter a valid price greater than 0.",
+        variant: "destructive",
+      })
+      return
+    }
 
-    const existingItem = cart.find((item) => item.id === product.id)
+    if (!productCategory) {
+      toast({
+        title: "Category required",
+        description: "Please select a category.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!productType) {
+      toast({
+        title: "Product type required",
+        description: "Please select a product type.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Generate unique ID for custom items or use existing product ID
+    const itemId = selectedProduct || `custom_${Date.now()}`
+
+    const existingItem = cart.find(
+      (item) => item.id === itemId && item.name === productName && item.price === Number(productPrice),
+    )
+
     if (existingItem) {
       setCart(
-        cart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + selectedQuantity } : item)),
+        cart.map((item) =>
+          item.id === itemId && item.name === productName && item.price === Number(productPrice)
+            ? { ...item, quantity: item.quantity + selectedQuantity }
+            : item,
+        ),
       )
     } else {
       setCart([
         ...cart,
         {
-          id: product.id,
-          name: product.name,
-          price: product.price,
+          id: itemId,
+          name: productName,
+          price: Number(productPrice),
           quantity: selectedQuantity,
-          category: product.category,
-          type: product.type,
+          category: productCategory,
+          type: productType as "product" | "service" | "combo",
         },
       ])
     }
 
     toast({
       title: "Added to cart",
-      description: `${product.name} (${selectedQuantity}) has been added to your cart.`,
+      description: `${productName} (${selectedQuantity}) has been added to your cart.`,
     })
 
-    // Reset quantity but keep the product selected for convenience
+    // Reset quantity but keep other fields for convenience
+    setSelectedQuantity(1)
+  }
+
+  const clearProductForm = () => {
+    setSelectedProduct("")
+    setProductName("")
+    setProductPrice("")
+    setProductCategory("")
+    setProductType("")
     setSelectedQuantity(1)
   }
 
@@ -214,16 +289,36 @@ export default function POSPage() {
   }
 
   const saveEdit = (id: string) => {
+    if (editQuantity <= 0) {
+      toast({
+        title: "Invalid quantity",
+        description: "Quantity must be greater than 0.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setCart(cart.map((item) => (item.id === id ? { ...item, quantity: editQuantity } : item)))
     setEditingItem(null)
+
+    toast({
+      title: "Item updated",
+      description: "Quantity has been updated successfully.",
+    })
   }
 
   const cancelEdit = () => {
     setEditingItem(null)
+    setEditQuantity(1)
   }
 
-  const removeFromCart = (id: string) => {
+  const confirmDelete = (id: string) => {
     setCart(cart.filter((item) => item.id !== id))
+
+    toast({
+      title: "Item removed",
+      description: "Item has been removed from cart.",
+    })
   }
 
   const clearCart = () => {
@@ -231,6 +326,8 @@ export default function POSPage() {
     setDiscountValue(0)
     setCustomerName("")
     setPaymentMethod("")
+    setEditingItem(null)
+    clearProductForm()
   }
 
   // Calculate totals
@@ -262,7 +359,7 @@ export default function POSPage() {
     try {
       const saleData = {
         items: cart.map((item) => ({
-          product_id: Number.parseInt(item.id),
+          product_id: selectedProduct ? Number.parseInt(item.id) : 0,
           quantity: item.quantity,
           unit_price: item.price,
         })),
@@ -317,287 +414,349 @@ export default function POSPage() {
   const getTypeColor = (type: string) => {
     switch (type) {
       case "product":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800 border-green-200"
       case "service":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800 border-blue-200"
       case "combo":
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 text-purple-800 border-purple-200"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800 border-gray-200"
     }
   }
 
   return (
-    <div className="flex-1 p-3 md:p-6 pb-safe">
+    <div className="flex-1 p-3 md:p-6 pb-safe bg-gray-50 min-h-screen">
       <MobileOptimizations />
       <div className="flex items-center gap-2 md:gap-4 mb-4 md:mb-6">
         <SidebarTrigger />
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Point of Sale</h1>
-          <p className="text-sm md:text-base text-gray-500">Process sales and manage transactions</p>
+          <p className="text-sm md:text-base text-gray-600">Process sales and manage transactions</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 md:gap-6">
-        {/* Product Selection Section */}
-        <div className="xl:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-gray-900">Add Products</CardTitle>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        {/* Product Selection & Cart Section */}
+        <div className="space-y-6">
+          {/* Product Selection */}
+          <Card className="shadow-lg border-0">
+            <CardHeader className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-t-lg">
+              <CardTitle className="text-white">Add Product</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Category Selection */}
+            <CardContent className="space-y-4 p-6">
+              {/* Quick Product Selection */}
               <div>
-                <Label htmlFor="category" className="text-sm font-medium text-gray-700">
-                  Category
-                </Label>
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-full h-12">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Product Selection */}
-              <div>
-                <Label htmlFor="product" className="text-sm font-medium text-gray-700">
-                  Product
+                <Label className="text-sm font-semibold text-gray-700 mb-2 block">
+                  Quick Select Product (Optional)
                 </Label>
                 <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                  <SelectTrigger className="w-full h-12">
-                    <SelectValue placeholder="Select product" />
+                  <SelectTrigger className="w-full h-12 border-2 border-gray-200 focus:border-green-500 bg-white">
+                    <SelectValue placeholder="Select existing product or create custom" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {filteredProducts.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
+                  <SelectContent className="bg-white border-2 border-gray-200 max-h-60">
+                    <SelectItem value="" className="hover:bg-green-50 focus:bg-green-50 cursor-pointer py-3">
+                      <span className="font-medium text-blue-600">Create Custom Item</span>
+                    </SelectItem>
+                    {productsData.map((product) => (
+                      <SelectItem
+                        key={product.id}
+                        value={product.id}
+                        className="hover:bg-green-50 focus:bg-green-50 cursor-pointer py-3"
+                      >
                         <div className="flex justify-between items-center w-full">
-                          <span>{product.name}</span>
-                          <span className="text-green-600 font-medium">R {product.price.toFixed(2)}</span>
+                          <span className="font-medium">{product.name}</span>
+                          <span className="text-green-600 font-bold ml-4">R {product.price.toFixed(2)}</span>
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
 
-                {selectedProduct && (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                    <div className="flex justify-between">
-                      <div>
-                        <p className="font-medium">{productsData.find((p) => p.id === selectedProduct)?.name}</p>
-                        <p className="text-sm text-gray-500">
-                          {productsData.find((p) => p.id === selectedProduct)?.description}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">
-                          R {productsData.find((p) => p.id === selectedProduct)?.price.toFixed(2)}
-                        </p>
-                        <Badge
-                          className={getTypeColor(
-                            productsData.find((p) => p.id === selectedProduct)?.type || "product",
-                          )}
+              {/* Editable Product Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-semibold text-gray-700 mb-2 block">Product Name *</Label>
+                  <Input
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="Enter product name"
+                    className="border-2 border-gray-200 focus:border-green-500 h-12"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-sm font-semibold text-gray-700 mb-2 block">Price (R) *</Label>
+                  <Input
+                    type="number"
+                    value={productPrice}
+                    onChange={(e) => setProductPrice(e.target.value)}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className="border-2 border-gray-200 focus:border-green-500 h-12"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-sm font-semibold text-gray-700 mb-2 block">Category *</Label>
+                  <Select value={productCategory} onValueChange={setProductCategory}>
+                    <SelectTrigger className="w-full h-12 border-2 border-gray-200 focus:border-green-500 bg-white">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-2 border-gray-200">
+                      {categories.map((category) => (
+                        <SelectItem
+                          key={category}
+                          value={category}
+                          className="hover:bg-green-50 focus:bg-green-50 cursor-pointer py-3"
                         >
-                          {productsData.find((p) => p.id === selectedProduct)?.type}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-semibold text-gray-700 mb-2 block">Type *</Label>
+                  <Select value={productType} onValueChange={setProductType}>
+                    <SelectTrigger className="w-full h-12 border-2 border-gray-200 focus:border-green-500 bg-white">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-2 border-gray-200">
+                      {productTypes.map((type) => (
+                        <SelectItem
+                          key={type}
+                          value={type}
+                          className="hover:bg-green-50 focus:bg-green-50 cursor-pointer py-3"
+                        >
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Quantity Selection */}
               <div>
-                <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">
-                  Quantity
-                </Label>
-                <div className="flex items-center gap-2">
+                <Label className="text-sm font-semibold text-gray-700 mb-2 block">Quantity</Label>
+                <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
-                    className="h-12 w-12"
+                    className="h-12 w-12 border-2 border-gray-200 hover:border-green-500 hover:bg-green-50"
                   >
-                    <Minus className="h-4 w-4" />
+                    <Minus className="h-5 w-5" />
                   </Button>
                   <Input
-                    id="quantity"
                     type="number"
                     value={selectedQuantity}
                     onChange={(e) => setSelectedQuantity(Math.max(1, Number.parseInt(e.target.value) || 1))}
-                    className="h-12 text-center"
+                    className="h-12 text-center text-lg font-semibold border-2 border-gray-200 focus:border-green-500"
                     min="1"
                   />
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={() => setSelectedQuantity(selectedQuantity + 1)}
-                    className="h-12 w-12"
+                    className="h-12 w-12 border-2 border-gray-200 hover:border-green-500 hover:bg-green-50"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-5 w-5" />
                   </Button>
                 </div>
               </div>
 
-              {/* Add to Cart Button */}
-              <Button
-                onClick={addToCart}
-                className="w-full bg-green-600 hover:bg-green-700 h-12"
-                disabled={!selectedProduct}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add to Cart
-              </Button>
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  onClick={addToCart}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 h-14 text-lg font-semibold shadow-lg"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Add to Cart
+                </Button>
+                <Button
+                  onClick={clearProductForm}
+                  variant="outline"
+                  className="h-14 px-6 border-2 border-gray-200 hover:border-gray-400"
+                >
+                  Clear
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-              {/* Current Cart Items */}
-              <div className="mt-6">
-                <h3 className="font-medium text-gray-900 mb-2">Current Cart Items</h3>
-                <div className="space-y-3 max-h-[40vh] overflow-y-auto">
-                  {cart.length === 0 ? (
-                    <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-md">No items in cart</div>
-                  ) : (
-                    cart.map((item) => (
-                      <div key={item.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
-                        <div className="flex justify-between items-center">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900">{item.name}</h4>
-                              <Badge className={getTypeColor(item.type)}>{item.type}</Badge>
-                            </div>
-                            <p className="text-sm text-gray-500">R {item.price.toFixed(2)} each</p>
+          {/* Current Cart Items */}
+          <Card className="shadow-lg border-0">
+            <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2 text-white">
+                <ShoppingCart className="h-5 w-5" />
+                Cart Items ({cart.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                {cart.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300">
+                    <ShoppingCart className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                    <p className="font-medium">No items in cart</p>
+                  </div>
+                ) : (
+                  cart.map((item) => (
+                    <div
+                      key={`${item.id}-${item.name}-${item.price}`}
+                      className="p-4 border-2 border-gray-200 rounded-lg bg-white shadow-sm"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="font-semibold text-gray-900">{item.name}</h4>
+                            <Badge className={`${getTypeColor(item.type)} border`}>{item.type}</Badge>
                           </div>
+                          <p className="text-sm text-gray-600">
+                            R {item.price.toFixed(2)} each • {item.category}
+                          </p>
+                        </div>
 
-                          {editingItem === item.id ? (
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 ml-4">
+                          {editingItem === `${item.id}-${item.name}-${item.price}` ? (
+                            <>
                               <Input
                                 type="number"
                                 value={editQuantity}
                                 onChange={(e) => setEditQuantity(Math.max(1, Number.parseInt(e.target.value) || 1))}
-                                className="w-16 h-9 text-center"
+                                className="w-20 h-10 text-center border-2 border-gray-200 focus:border-green-500"
                                 min="1"
                               />
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                onClick={() => saveEdit(item.id)}
-                                className="h-9 w-9 p-0 text-green-600"
+                                onClick={() => saveEdit(`${item.id}-${item.name}-${item.price}`)}
+                                className="h-10 w-10 p-0 bg-green-600 hover:bg-green-700"
                               >
                                 <Check className="h-4 w-4" />
                               </Button>
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="outline"
                                 onClick={cancelEdit}
-                                className="h-9 w-9 p-0 text-red-600"
+                                className="h-10 w-10 p-0 border-2 border-red-200 text-red-600 hover:bg-red-50"
                               >
                                 <X className="h-4 w-4" />
                               </Button>
-                            </div>
+                            </>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="px-3 py-1 bg-white rounded border border-gray-200 text-center min-w-[40px]">
+                            <>
+                              <span className="px-4 py-2 bg-gray-100 border-2 border-gray-200 rounded-lg text-center min-w-[50px] font-semibold">
                                 {item.quantity}
                               </span>
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                onClick={() => startEditing(item.id)}
-                                className="h-9 w-9 p-0 text-blue-600"
+                                variant="outline"
+                                onClick={() => startEditing(`${item.id}-${item.name}-${item.price}`)}
+                                className="h-10 w-10 p-0 border-2 border-blue-200 text-blue-600 hover:bg-blue-50"
                               >
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => removeFromCart(item.id)}
-                                className="h-9 w-9 p-0 text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-10 w-10 p-0 border-2 border-red-200 text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="bg-white border-2 border-gray-200">
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                                      <AlertTriangle className="h-5 w-5" />
+                                      Confirm Deletion
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription className="text-gray-600">
+                                      Are you sure you want to remove "{item.name}" from the cart? This action cannot be
+                                      undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel className="border-2 border-gray-200">Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => confirmDelete(`${item.id}-${item.name}-${item.price}`)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </>
                           )}
                         </div>
-                        <div className="flex justify-between mt-2 text-sm">
-                          <span>Subtotal:</span>
-                          <span className="font-medium">R {(item.price * item.quantity).toFixed(2)}</span>
-                        </div>
                       </div>
-                    ))
-                  )}
-                </div>
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="font-semibold text-gray-900">R {(item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Cart Section */}
-        <div className="xl:sticky xl:top-6">
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-gray-900 text-lg">
-                <ShoppingCart className="h-5 w-5" />
-                Cart Summary ({cart.length} items)
+        {/* Checkout Section */}
+        <div className="lg:sticky lg:top-6">
+          <Card className="shadow-lg border-0">
+            <CardHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Calculator className="h-5 w-5" />
+                Checkout
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6 p-6">
               {cart.length === 0 ? (
                 <div className="text-center py-8">
-                  <ShoppingCart className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">Cart is empty</p>
-                  <p className="text-sm text-gray-400">Add products to get started</p>
+                  <Calculator className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 font-medium">Add items to checkout</p>
                 </div>
               ) : (
                 <>
                   {/* Customer Info */}
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Customer Name (Optional)</Label>
+                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Customer Name (Optional)</Label>
                     <Input
                       placeholder="Enter customer name"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="mt-1"
+                      className="border-2 border-gray-200 focus:border-purple-500 h-12"
                     />
                   </div>
 
-                  <Separator />
-
-                  {/* Cart Summary */}
-                  <div className="space-y-2">
-                    <h3 className="font-medium text-gray-900">Order Summary</h3>
-                    <div className="max-h-48 overflow-y-auto space-y-2">
-                      {cart.map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
-                          <span>
-                            {item.name} × {item.quantity}
-                          </span>
-                          <span>R {(item.price * item.quantity).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Separator />
+                  <Separator className="bg-gray-200" />
 
                   {/* Discount Section */}
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Discount</Label>
-                    <div className="flex gap-2 mt-2">
+                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Discount</Label>
+                    <div className="flex gap-2">
                       <Select
                         value={discountType}
                         onValueChange={(value: "percentage" | "amount") => setDiscountType(value)}
                       >
-                        <SelectTrigger className="w-20">
+                        <SelectTrigger className="w-20 border-2 border-gray-200 focus:border-purple-500">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percentage">%</SelectItem>
-                          <SelectItem value="amount">R</SelectItem>
+                        <SelectContent className="bg-white border-2 border-gray-200">
+                          <SelectItem value="percentage" className="hover:bg-purple-50 focus:bg-purple-50">
+                            %
+                          </SelectItem>
+                          <SelectItem value="amount" className="hover:bg-purple-50 focus:bg-purple-50">
+                            R
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
@@ -605,7 +764,7 @@ export default function POSPage() {
                         value={discountValue}
                         onChange={(e) => setDiscountValue(Number(e.target.value))}
                         placeholder="0"
-                        className="flex-1"
+                        className="flex-1 border-2 border-gray-200 focus:border-purple-500"
                         min="0"
                         max={discountType === "percentage" ? "100" : subtotal.toString()}
                       />
@@ -614,59 +773,67 @@ export default function POSPage() {
 
                   {/* Payment Method */}
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Payment Method *</Label>
-                    <div className="grid grid-cols-1 gap-3 mt-2">
+                    <Label className="text-sm font-semibold text-gray-700 mb-2 block">Payment Method *</Label>
+                    <div className="grid grid-cols-1 gap-3">
                       {paymentMethods.map((method) => (
                         <Button
                           key={method.id}
                           variant={paymentMethod === method.id ? "default" : "outline"}
                           onClick={() => setPaymentMethod(method.id)}
-                          className="justify-start h-12 p-4 touch-manipulation text-left"
+                          className={`justify-start h-12 p-4 text-left border-2 ${
+                            paymentMethod === method.id
+                              ? "bg-purple-600 hover:bg-purple-700 border-purple-600 text-white"
+                              : "border-gray-200 hover:border-purple-500 hover:bg-purple-50 text-gray-700"
+                          }`}
                         >
                           <method.icon className="h-5 w-5 mr-3 flex-shrink-0" />
-                          <span className="text-sm md:text-base">{method.name}</span>
+                          <span className="font-medium">{method.name}</span>
                         </Button>
                       ))}
                     </div>
                   </div>
 
-                  <Separator />
+                  <Separator className="bg-gray-200" />
 
                   {/* Totals */}
-                  <div className="space-y-2">
+                  <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Subtotal:</span>
-                      <span className="text-gray-900 font-medium">R {subtotal.toFixed(2)}</span>
+                      <span className="text-gray-900 font-semibold">R {subtotal.toFixed(2)}</span>
                     </div>
                     {discountAmount > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Discount:</span>
-                        <span className="text-red-600 font-medium">-R {discountAmount.toFixed(2)}</span>
+                        <span className="text-red-600 font-semibold">-R {discountAmount.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">VAT ({vatRate}%):</span>
-                      <span className="text-gray-900 font-medium">R {vatAmount.toFixed(2)}</span>
+                      <span className="text-gray-900 font-semibold">R {vatAmount.toFixed(2)}</span>
                     </div>
-                    <Separator />
-                    <div className="flex justify-between text-lg font-bold">
+                    <Separator className="bg-gray-300" />
+                    <div className="flex justify-between text-xl font-bold">
                       <span className="text-gray-900">Total:</span>
                       <span className="text-green-600">R {total.toFixed(2)}</span>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <Button
                       onClick={processSale}
-                      className="w-full bg-green-600 hover:bg-green-700 h-14 text-lg font-semibold touch-manipulation"
+                      className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 h-16 text-lg font-bold shadow-lg"
                       disabled={!paymentMethod}
                     >
-                      <Calculator className="h-5 w-5 mr-2" />
+                      <Calculator className="h-6 w-6 mr-2" />
                       Process Sale - R {total.toFixed(2)}
                     </Button>
-                    <Button onClick={clearCart} variant="outline" className="w-full">
-                      Clear Cart
+                    <Button
+                      onClick={clearCart}
+                      variant="outline"
+                      className="w-full h-12 border-2 border-gray-200 hover:border-red-500 hover:bg-red-50 text-gray-700 hover:text-red-600"
+                    >
+                      Clear All
                     </Button>
                   </div>
                 </>
